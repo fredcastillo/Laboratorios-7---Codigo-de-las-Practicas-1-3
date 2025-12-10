@@ -1,3 +1,157 @@
+
+# ===========================================
+# PRACTICA 1 – NETWORK FILE SYSTEM (NFS)
+# ===========================================
+
+sudo dnf install nfs-utils -y
+sudo systemctl enable --now nfs-server
+sudo systemctl start nfs-server
+sudo systemctl status nfs-server
+sudo mkdir -p /home/fred/OS3
+cd /home/fred/OS3
+sudo touch adrian{001..100}.txt
+sudo chown -R nobody:nobody /home/fred/OS3
+sudo chmod 777 /home/fred/OS3
+nano /etc/exports
+/home/fred/OS3 192.168.100.169(rw,sync,no_root_squash,no_subtree_check)
+sudo exportfs -rav
+sudo firewall-cmd --permanent --add-service=nfs
+sudo firewall-cmd --permanent --add-service=mountd
+sudo firewall-cmd --permanent --add-service=rpc-bind
+sudo firewall-cmd --reload
+
+# CLIENTE NFS
+sudo dnf install nfs-utils -y
+sudo mkdir -p /mnt/OS3
+sudo mount -t nfs 192.168.100.168:/home/fred/OS3 /mnt/OS3
+df -h
+ls /mnt/OS3
+sudo nano /etc/fstab
+192.168.100.168:/home/fred/OS3 /mnt/OS3 nfs defaults 0 0
+sudo reboot
+df -h
+ls /mnt/OS3
+
+### ❗ NOTAS, ERRORES Y SOLUCIONES
+- Error de montaje: verificar que nfs-server esté activo y puerto abierto en firewall.
+- Problema de permisos: revisar propiedad y permisos de la carpeta compartida.
+- No se listan archivos: ejecutar sudo exportfs -rav en el servidor.
+- Error de red: comprobar IP correcta y conectividad entre cliente y servidor.
+
+### 📘 TÉRMINOS IMPORTANTES
+- **NFS**: Protocolo para compartir sistemas de archivos en red.
+- **Export**: Carpeta compartida en NFS.
+- **Mount**: Montar carpeta remota en el cliente.
+- **no_root_squash**: Permite que root en cliente actúe como root en servidor.
+- **sync**: Garantiza escritura inmediata en disco.
+- **subtree_check**: Verifica cambios en subdirectorios.
+
+# ===========================================
+# PRACTICA 2 – FILESERVER COMPATIBLE CON WINDOWS UTILIZANDO SAMBA
+# ===========================================
+
+sudo dnf install -y samba samba-client
+sudo systemctl enable --now smb nmb
+sudo systemctl start smb nmb
+sudo systemctl status smb nmb
+sudo mkdir -p /srv/samba/compartido
+sudo chmod -R 777 /srv/samba/compartido
+sudo touch /srv/samba/compartido/adrian{1..100}.txt
+sudo nano /etc/samba/smb.conf
+[compartido]
+path = /srv/samba/compartido
+browseable = yes
+read only = no
+writable = yes
+guest ok = yes
+sudo testparm
+sudo systemctl restart smb nmb
+sudo firewall-cmd --permanent --add-service=samba
+sudo firewall-cmd --reload
+sudo useradd fredsamba
+sudo passwd fredsamba
+sudo smbpasswd -a fredsamba
+sudo smbpasswd -e fredsamba
+sudo dnf install -y cifs-utils
+sudo mount -t cifs //IP_DEL_SERVER/compartido /mnt -o guest
+sudo semanage fcontext -a -t samba_share_t "/srv/samba/compartido(/.*)?"
+sudo restorecon -R -v /srv/samba/compartido
+sudo systemctl restart smb nmb
+sudo smbclient -L localhost -U%
+sudo journalctl -u smb -u nmb -f
+sudo systemctl restart smb nmb
+
+### ❗ NOTAS, ERRORES Y SOLUCIONES
+- Error de SELinux: aplicar semanage y restorecon.
+- Problemas de conexión: verificar firewall y servicios smb/nmb activos.
+- Usuario Samba no funciona: revisar contraseña y agregar con smbpasswd.
+- Montaje en Linux falla: comprobar IP y opciones de montaje cifs.
+
+### 📘 TÉRMINOS IMPORTANTES
+- **Samba**: Servicio para compartir archivos entre Linux y Windows.
+- **smb.conf**: Archivo de configuración de Samba.
+- **Guest**: Acceso sin autenticación.
+- **smbclient**: Herramienta para probar compartidos Samba.
+- **SELinux**: Seguridad en Linux que puede bloquear accesos.
+- **nmb**: Servicio para resolución de nombres NetBIOS.
+
+# ===========================================
+# PRACTICA 3 – CREACION DE CONTROLADOR DE DOMINIO COMPATIBLE CON CLIENTE WINDOWS UTILIZANDO SAMBA
+# ===========================================
+
+sudo hostnamectl set-hostname dc1.os3.inet
+sudo nano /etc/hosts
+192.168.100.168 dc1.os3.inet dc1
+sudo dnf -y update
+sudo dnf install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm -y
+sudo crb enable
+sudo dnf makecache
+sudo dnf install -y wget tar gcc make python3-devel flex bison gdb git keyutils-libs-devel libacl-devel libattr-devel libblkid-devel libxml2-devel libxslt-devel openldap-devel pam-devel popt-devel readline-devel zlib-devel systemd-devel lmdb-devel jansson-devel gpgme-devel libarchive-devel libicu-devel perl-ExtUtils-MakeMaker perl-Parse-Yapp rpcgen libtirpc-devel gnutls-devel python3-cryptography python3-dns python3-markdown python3-dnspython python3-pip
+sudo pip3 install markdown python3
+sudo mkdir -p /samba
+cd /samba
+sudo wget https://download.samba.org/pub/samba/stable/samba-4.21.1.tar.gz
+sudo tar -zxvf samba-4.21.1.tar.gz
+cd samba-4.21.1/
+sudo dnf install dbus-devel -y
+sudo ./configure --prefix=/usr/local/samba --enable-fhs --with-systemd --with-ads --with-ldap
+sudo make
+sudo make install
+export PATH=/usr/local/samba/bin:/usr/local/samba/sbin:$PATH
+echo 'export PATH=$PATH:/usr/local/samba/bin:/usr/local/samba/sbin' >> ~/.bashrc
+source ~/.bashrc
+sudo /usr/local/samba/bin/samba-tool domain provision --use-rfc2307 --interactive --option="interfaces= lo ens33" --option="bind interfaces only=yes"
+sudo cp /usr/local/samba/var/lib/samba/private/krb5.conf /etc/krb5.conf
+sudo nano /etc/systemd/system/samba-ad-dc.service
+# Contenido modificado según instrucciones
+sudo systemctl daemon-reload
+sudo systemctl enable --now samba-ad-dc
+sudo firewall-cmd --permanent --add-service={dns,kerberos,ldap,ldaps}
+sudo firewall-cmd --permanent --add-port={53,88,135,139,389,445,464,636,3268,3269}/tcp
+sudo firewall-cmd --permanent --add-port={53,88,137,138,389,464}/udp
+sudo firewall-cmd --reload
+sudo /usr/local/samba/bin/samba-tool user add lanegracubana 20252175Fc
+host -t SRV _ldap._tcp.os3.inet
+sudo dnf install krb5-workstation -y
+kinit administrator
+
+### ❗ NOTAS, ERRORES Y SOLUCIONES
+- Error de resolución DNS: verificar /etc/resolv.conf y firewall.
+- Cliente Windows no se une al dominio: comprobar DNS apuntando al controlador Samba.
+- Problemas de Kerberos: asegurar que krb5.conf esté correctamente copiado.
+- Servicio Samba no inicia: verificar archivo systemd y permisos.
+- Fallos en provisión del dominio: asegurarse de dependencias y variables PATH.
+
+### 📘 TÉRMINOS IMPORTANTES
+- **Controlador de Dominio (DC)**: Servidor que gestiona usuarios y permisos de dominio.
+- **Samba-tool**: Herramienta para administrar Samba y dominios.
+- **Kerberos**: Protocolo de autenticación en red.
+- **Realm**: Nombre del dominio en Samba/AD.
+- **DNS interno**: Resuelve nombres del dominio local.
+- **Provisioning**: Configuración inicial de un DC Samba.
+
+--------------------
+
 PRACTICA 1 – NFS
 
 sudo dnf install nfs-utils -y
@@ -356,6 +510,7 @@ Dominio: os3.inet
 Usuario: Administrator
 Clave: 20252175Fc
 Reiniciamos y entramos
+
 
 
 
