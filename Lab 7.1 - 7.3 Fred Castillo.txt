@@ -152,6 +152,10 @@ kinit administrator
 
 --------------------
 
+
+---- - version 1 - ----
+
+
 PRACTICA 1 – NFS
 
 sudo dnf install nfs-utils -y
@@ -510,6 +514,7 @@ Dominio: os3.inet
 Usuario: Administrator
 Clave: 20252175Fc
 Reiniciamos y entramos
+
 
 
 
